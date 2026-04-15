@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Results</title>
+</head>
+<body>
+
+<h2>Detected Appliance Usage</h2>
+
+<!-- TABLE -->
+<div>
+    {% for table in tables %}
+        {{ table|safe }}
+    {% endfor %}
+</div>
+
+<br>
+
+<!-- CHART -->
+{% if chart %}
+    <h3>Energy Usage Chart</h3>
+    <img src="{{ chart }}" width="500">
+{% endif %}
+
+<br><br>
+
+<a href="/download">
+    <button>Download CSV</button>
+</a>
+
+<br><br>
+<a href="/">Go Back</a>
+
+</body>
+</html>
