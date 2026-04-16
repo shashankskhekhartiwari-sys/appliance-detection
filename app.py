@@ -3,7 +3,7 @@ import pandas as pd
 import joblib
 import os
 import matplotlib.pyplot as plt
-import gdown   # ✅ ADD THIS
+import gdown
 
 app = Flask(__name__)
 
@@ -15,20 +15,27 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 os.makedirs(STATIC_FOLDER, exist_ok=True)
 
-# ================= MODEL DOWNLOAD + LOAD =================
+# ================= MODEL (LAZY LOAD) =================
 MODEL_PATH = "appliance_model.pkl"
+model = None
 
-if not os.path.exists(MODEL_PATH):
-    url = "https://drive.google.com/uc?id=1dEQeTb6yVljQdIWnuZD44R8O4LK6Ktpw"
-    gdown.download(url, MODEL_PATH, quiet=False)
+def get_model():
+    global model
 
-model = joblib.load(MODEL_PATH)
-# ========================================================
+    if model is None:
+        if not os.path.exists(MODEL_PATH):
+            url = "https://drive.google.com/uc?id=1dEQeTb6yVljQdIWnuZD44R8O4LK6Ktpw"
+            gdown.download(url, MODEL_PATH, quiet=True)
+
+        model = joblib.load(MODEL_PATH)
+
+    return model
+# ====================================================
 
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return "App is running ✅"   # 🔥 IMPORTANT (test route)
 
 
 @app.route("/upload", methods=["POST"])
@@ -41,8 +48,11 @@ def upload_file():
 
         df = pd.read_csv(filepath)
 
+        # 🔥 LIMIT DATA (VERY IMPORTANT)
+        df = df.head(2000)
+
         # ===== PROCESSING =====
-        df["Time"] = pd.to_datetime(df["Time"], errors="coerce")  # ✅ FIXED
+        df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
         df = df.dropna(subset=["Time"])
         df = df.sort_values("Time").reset_index(drop=True)
 
@@ -70,15 +80,18 @@ def upload_file():
             "Peak_Flag", "Night_Flag"
         ]
 
+        # 🔥 LOAD MODEL HERE (NOT AT START)
+        model = get_model()
+
         df["Prediction"] = model.predict(df[features])
 
-        # ===== EVENT TRACKING =====
+        # ===== EVENT TRACKING (FASTER LOOP) =====
         active = {}
         events = []
 
-        for _, row in df.iterrows():
-            pred = str(row["Prediction"])
-            time = row["Time"]
+        for row in df.itertuples():
+            pred = str(row.Prediction)
+            time = row.Time
 
             if "_ON" in pred:
                 app_name = pred.replace("_ON", "")
@@ -92,12 +105,11 @@ def upload_file():
                     end = time
 
                     duration = (end - start).total_seconds() / 3600
-                    power = abs(row["Delta_P"])
+                    power = abs(row.Delta_P)
                     energy = power * duration
                     cost = (energy / 1000) * 8
 
                     events.append([app_name, start, end, duration, energy, cost])
-
                     del active[app_name]
 
         events_df = pd.DataFrame(events, columns=[
@@ -109,20 +121,8 @@ def upload_file():
         output_path = os.path.join(OUTPUT_FOLDER, "output.csv")
         events_df.to_csv(output_path, index=False)
 
-        # ===== CREATE CHART =====
+        # ❌ REMOVE CHART (TO PREVENT TIMEOUT)
         chart_path = None
-        if not events_df.empty:
-            summary = events_df.groupby("Appliance")["Energy_Wh"].sum()
-
-            plt.figure()
-            summary.plot(kind="bar")
-            plt.title("Energy Usage per Appliance")
-            plt.xlabel("Appliance")
-            plt.ylabel("Energy (Wh)")
-
-            chart_path = os.path.join(STATIC_FOLDER, "chart.png")
-            plt.savefig(chart_path)
-            plt.close()
 
         return render_template(
             "result.html",
@@ -139,4 +139,6 @@ def download():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, use_reloader=False)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
