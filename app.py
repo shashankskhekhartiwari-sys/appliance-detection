@@ -3,6 +3,7 @@ import pandas as pd
 import joblib
 import os
 import matplotlib.pyplot as plt
+import gdown   # ✅ ADD THIS
 
 app = Flask(__name__)
 
@@ -14,7 +15,15 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 os.makedirs(STATIC_FOLDER, exist_ok=True)
 
-model = joblib.load("appliance_model.pkl")
+# ================= MODEL DOWNLOAD + LOAD =================
+MODEL_PATH = "appliance_model.pkl"
+
+if not os.path.exists(MODEL_PATH):
+    url = "https://drive.google.com/uc?id=1dEQeTb6yVljQdIWnuZD44R8O4LK6Ktpw"
+    gdown.download(url, MODEL_PATH, quiet=False)
+
+model = joblib.load(MODEL_PATH)
+# ========================================================
 
 
 @app.route("/")
@@ -33,7 +42,8 @@ def upload_file():
         df = pd.read_csv(filepath)
 
         # ===== PROCESSING =====
-        df["Time"] = pd.to_datetime(df["Time"])
+        df["Time"] = pd.to_datetime(df["Time"], errors="coerce")  # ✅ FIXED
+        df = df.dropna(subset=["Time"])
         df = df.sort_values("Time").reset_index(drop=True)
 
         df["Hour"] = df["Time"].dt.hour
@@ -100,6 +110,7 @@ def upload_file():
         events_df.to_csv(output_path, index=False)
 
         # ===== CREATE CHART =====
+        chart_path = None
         if not events_df.empty:
             summary = events_df.groupby("Appliance")["Energy_Wh"].sum()
 
@@ -112,8 +123,6 @@ def upload_file():
             chart_path = os.path.join(STATIC_FOLDER, "chart.png")
             plt.savefig(chart_path)
             plt.close()
-        else:
-            chart_path = None
 
         return render_template(
             "result.html",
